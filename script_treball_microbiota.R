@@ -150,45 +150,25 @@ ggplot(microbiota_long, aes(x = Taxon, y = Abundància)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
-
-
-
-# ---------------------------------------------------------
-# A PARTIR D'AQUI REVISAR, PERQUÈ HI HA COSES QUE NO CALEN
-# ---------------------------------------------------------
-
-#Comprovar si cada fila suma 1 (o proporció)
+#Comprovar si cada fila suma 1 i normalitzar
 row_sums <- rowSums(microbiota)
-summary(row_sums)               #veure si sumen 1 o valors petits (totes files)
-# Si no sumen 1 (són abundàncies o proporcions molt petites), normalitza:
-microbiota_prop <- microbiota / row_sums
-# Comprovació
-summary(rowSums(microbiota_prop))
+microbiota_prop <- microbiota/row_sums
+summary(rowSums(microbiota_prop)) #comprovat: totes les files sumen 1
 
-# 2.2 Tractament de zeros (imputació molt simple amb pseudocount)
-# Comptar zeros
-sum(microbiota_prop == 0)
-# Substituir zeros per un valor molt petit (mitjana de valors positius / 100)
-min_pos <- min(microbiota_prop[microbiota_prop > 0], na.rm = TRUE)
-pseudocount <- min_pos / 100
-microbiota_pc <- as.data.frame(microbiota_prop)
-microbiota_pc[microbiota_pc == 0] <- pseudocount
+#Còpia de seguretat
+microbiota_pc <- microbiota_prop
 
-# 2.3 Transformació CLR (Centered log-ratio)
-microbiota_clr <- clr(as.matrix(microbiota_pc))   # objecte: matriu n x D
-# Convertir a data.frame per treballar amb ggplot o PCA
+#Transformaió CLR (per poder fer anàlisi composicional)
+microbiota_clr <- clr(as.matrix(microbiota_pc))
 microbiota_clr_df <- as.data.frame(microbiota_clr)
 
-# Resum estadístic de les coordenades CLR
-summary(microbiota_clr_df)
+#PCA sobre coordenades CLR
+pca_clr <- prcomp(microbiota_clr_df, center=TRUE, scale.=FALSE)
+summary(pca_clr)
 
-# 2.4 PCA sobre CLR per visualització multivariant
-pca_clr <- prcomp(microbiota_clr_df, center = TRUE, scale. = FALSE)
-summary(pca_clr)   # variància explicada
-
-# Biplot bàsic (usant les primeres 2 PC)
+#Visualització multivariant de la composició
 scores <- as.data.frame(pca_clr$x)
-scores$obesity <- data$obesity   # afegir informació de grup
+scores$obesity <- data$obesity
 ggplot(scores, aes(x = PC1, y = PC2, color = obesity)) +
   geom_point(size = 2) +
   labs(title = "PCA sobre coordenades CLR (microbiota)",

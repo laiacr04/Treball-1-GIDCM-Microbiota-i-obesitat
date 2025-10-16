@@ -176,36 +176,52 @@ ggplot(scores, aes(x = PC1, y = PC2, color = obesity)) +
        y = paste0("PC2 (", round(100*summary(pca_clr)$importance[2,2],1), "%)")) +
   theme_minimal()
 
-# Comprovem variància expliquen components principals
-summary(pca_clr)$importance[2:3, 1:5]   # mostra % de variància i acumulada
-plot(pca_clr, type="l", main="Scree plot PCA (CLR)")
 
+#Interpretació de la PCA (ja calculada anteriorment)
+summary(pca_clr)
 
-# Definició SBP
+# Mostrem les càrregues (loadings) dels components
+loadings <- as.data.frame(pca_clr$rotation)
+head(loadings)
 
-PHI <- sbp_basis(list(
-  b1 = colnames(microbiota)[1:6] ~ colnames(microbiota)[7:12]
-), data = microbiota)
+# Taxons més importants en els dos primers components
+loadings_PC1 <- sort(abs(loadings[,1]), decreasing = TRUE)
+loadings_PC2 <- sort(abs(loadings[,2]), decreasing = TRUE)
 
+cat("Taxons més importants en PC1:\n")
+print(names(loadings_PC1[1:5]))
+cat("Taxons més importants en PC2:\n")
+print(names(loadings_PC2[1:5]))
 
-# Calcular coordenades OLR
-olrX <- as.data.frame(coordinates(microbiota, basis = PHI))
-colnames(olrX) <- c("olr1")
-olrX$obesity <- data$obesity
-
-# Descripció numèrica
-summary(olrX$olr1)
-by(olrX$olr1, olrX$obesity, summary)
-
-# Gràfic del balanç segons obesitat
-ggplot(olrX, aes(x = obesity, y = olr1, fill = obesity)) +
-  geom_boxplot(alpha = 0.7) +
-  labs(title = "Balanç OLR segons obesitat",
-       x = "Obesitat",
-       y = "Coordenada OLR (b1)") +
+# Gràfic de les càrregues del primer component
+ggplot(loadings, aes(x = reorder(rownames(loadings), PC1), y = PC1)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
   theme_minimal() +
-  theme(legend.position = "none")
+  labs(title = "Contribució dels taxons al primer component principal (PC1)",
+       x = "Taxó", y = "Càrrega (loading)")
 
-# Contrast estadístic
-t.test(olr1 ~ obesity, data = olrX)
+#Definició d'una SBP (Sequential Binary Partition)
+# Creem una SBP equilibrada (divideix successivament els 12 components)
+# Això és una decisió neutral quan no hi ha criteri biològic concret
+n_taxa <- ncol(microbiota_prop)
+SBP <- matrix(0, nrow = n_taxa, ncol = n_taxa - 1)
+for (i in 1:(n_taxa - 1)) {
+  SBP[1:i, i] <- 1
+  SBP[(i+1):n_taxa, i] <- -1
+}
+
+# Comprovem la SBP
+SBP
+
+library(coda.base)
+
+microbiota_olr <- coordinates(
+  as.matrix(microbiota_prop),
+  basis = sbp_basis(SBP)
+)
+
+microbiota_olr_df <- as.data.frame(microbiota_olr)
+head(microbiota_olr_df)
+
 

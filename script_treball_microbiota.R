@@ -179,53 +179,12 @@ ggplot(scores, aes(x = PC1, y = PC2, color = obesity)) +
 #--------------------------------------------------
 # Busquem quina és la millor SBP
 #--------------------------------------------------
-
-# 1) Definició SBP seqüencial equilibrada
-n_taxa <- ncol(microbiota_prop)
-taxa_names <- colnames(microbiota_prop)
-SBP_seq <- matrix(0, nrow = n_taxa, ncol = n_taxa - 1,
-                  dimnames = list(taxa_names, paste0("seq_b", 1:(n_taxa-1))))
-for (i in 1:(n_taxa - 1)) {
-  SBP_seq[1:i, i] <- 1
-  SBP_seq[(i+1):n_taxa, i] <- -1
-}
-
-# Mostrem les  columnes de la SBP per inspecció
-print(SBP_seq[, 1:min(12, ncol(SBP_seq))])
-
-# 2) Base i coordenades OLR (sobre les proporcions ja calculades)
-basis_seq <- tryCatch(sbp_basis(SBP_seq), warning = function(w) { message("Avis sbp_basis: ", w$message); sbp_basis(SBP_seq) })
-microbiota_olr_seq <- coordinates(as.matrix(microbiota_prop), basis = basis_seq)
-
-# 3) Data.frame 
-microbiota_olr_seq_df <- as.data.frame(microbiota_olr_seq)
-colnames(microbiota_olr_seq_df) <- paste0("seq_b", 1:ncol(microbiota_olr_seq_df))
-microbiota_olr_seq_df$obesity <- data$obesity
-
-# 4) Resum
-results_seq_all <- data.frame(
-  Balance = colnames(microbiota_olr_seq_df)[-ncol(microbiota_olr_seq_df)],
-  p_value = sapply(colnames(microbiota_olr_seq_df)[-ncol(microbiota_olr_seq_df)], function(b){
-    t.test(microbiota_olr_seq_df[[b]] ~ microbiota_olr_seq_df$obesity)$p.value
-  })
-)
-results_seq_all
-results_seq_all$SBP <- "Seqüencial"
-
-
-# 5) Gràfic boxplot 
-p_seq_b1 <- ggplot(microbiota_olr_seq_df, aes(x = obesity, y = seq_b1, fill = obesity)) +
-  geom_boxplot(alpha = 0.7) +
-  labs(title = "SBP Seqüencial — Balanç 1 vs Obesitat", y = "OLR (seq_b1)", x = "Obesitat") +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-print(p_seq_b1)
 #--------------------------------------------------
 # SBP jerarquica 
 #--------------------------------------------------
-
 # Transformació CLR i clustering
+n_taxa <- ncol(microbiota_prop)
+taxa_names <- colnames(microbiota_prop)
 microbiota_prop_nz <- tryCatch({
   cmultRepl(microbiota_prop, method = "CZM")
 }, error = function(e){
@@ -291,146 +250,67 @@ results_hc_all <- data.frame(
 results_hc_all
 results_hc_all$SBP <- "Jeràrquica"
 
-#--------------------------------------------------
-# SBP hibrida
-#--------------------------------------------------
 
 
-# --- 1) Transformació CLR per evitar zeros ---
-microbiota_prop_nz <- tryCatch({
-  cmultRepl(microbiota_prop, method = "CZM")
-}, error = function(e) microbiota_prop)
-
-microbiota_clr <- clr(as.matrix(microbiota_prop_nz))
-
-# --- 2) Diferències mitjanes per grup ---
-group <- data$obesity
-mean_diff <- apply(microbiota_clr, 2, function(x) mean(x[group=="Obesitat"]) - mean(x[group=="No obesitat"]))
-
-# --- 3) Selecció tàxons per balanç +1 i -1 ---
-# Exemple: escollim els 5 tàxons més positius i 5 més negatius
-top_positive <- names(sort(mean_diff, decreasing = TRUE)[1:5])
-top_negative <- names(sort(mean_diff, decreasing = FALSE)[1:5])
-
-taxa_names <- colnames(microbiota_prop_nz)
-SBP_opt <- matrix(0, nrow = length(taxa_names), ncol = 1, dimnames = list(taxa_names, "Opt_b1"))
-
-SBP_opt[top_positive, 1] <- 1
-SBP_opt[top_negative, 1] <- -1
-
-# --- 4) Base OLR i coordenades ---
-basis_opt <- sbp_basis(SBP_opt)
-microbiota_olr_opt <- coordinates(as.matrix(microbiota_prop_nz), basis = basis_opt)
-microbiota_olr_opt_df <- data.frame(OLR = microbiota_olr_opt[,1], obesity = group)
-
-# --- 5) Resum i T-test ---
-cat("\nTàxons +1:\n"); print(top_positive)
-cat("\nTàxons -1:\n"); print(top_negative)
-
-tt_opt <- t.test(OLR ~ obesity, data = microbiota_olr_opt_df)
-print(tt_opt)
-
-# --- 6) Boxplot per visualització ---
-ggplot(microbiota_olr_opt_df, aes(x = obesity, y = OLR, fill = obesity)) +
-  geom_boxplot(alpha = 0.7) +
-  labs(title = "Balanç híbrid optimitzat — separació per obesitat",
-       x = "Obesitat", y = "Coordenada OLR") +
-  theme_minimal() +
-  theme(legend.position = "none")
-opt_hybrid_results <- data.frame(
-  Balance = colnames(SBP_opt),  # "Opt_b1"
-  p_value = t.test(microbiota_olr_opt_df$OLR ~ microbiota_olr_opt_df$obesity)$p.value,
-  SBP = "Híbrid optimitzat"
-)
 
 
-# -----------------------------
-# 1) Combinar tots els resultats
-# -----------------------------
-all_results <- rbind(results_seq_all, results_hc_all, opt_hybrid_results)
-all_results <- all_results[order(all_results$p_value), ]
 
-cat("\n===== Resum comparatiu de tots els balanços =====\n")
-print(head(all_results, 10))
-all_results
-# -----------------------------
-# 2) Gràfic: distribució p-values per SBP
-# -----------------------------
-ggplot(all_results, aes(x = SBP, y = -log10(p_value), fill = SBP)) +
-  geom_boxplot(alpha = 0.7) +
-  geom_jitter(width = 0.2, alpha = 0.5) +
-  theme_minimal() +
-  labs(title = "Comparació de la força estadística dels balanços",
-       x = "Tipus de SBP", y = expression(-log[10](p))) +
-  scale_fill_manual(values = c("#5DADE2", "#58D68D", "#F5B041"))
+# ------------------------------------------------------------------
+# PAS 1: Definir el balanç d'interès
+# ------------------------------------------------------------------
+# Pels nostres resultats, el balanç més significatiu de la SBP
+# jeràrquica (no supervisada) va ser 'hc_b10'.
+balance_interes_nom <- "hc_b10"
 
-# -----------------------------
-# 3) Millor balanç global
-# -----------------------------
-best_balance <- all_results[which.min(all_results$p_value), ]
-cat("\n===== Millor balanç global =====\n")
-print(best_balance)
-cat("\nLa millor SBP segons el contrast d'obesitat és:",
-    best_balance$SBP, "amb el balanç", best_balance$Balance,
-    " (p-value =", round(best_balance$p_value, 5), ")\n")
-
-# -----------------------------
-# 4) Balanços significatius (p < 0.05)
-# -----------------------------
-sig_balances <- subset(all_results, p_value < 0.05)
-if (nrow(sig_balances) > 0) {
-  ggplot(sig_balances, aes(x = Balance, y = -log10(p_value), fill = SBP)) +
-    geom_col(position = "dodge", alpha = 0.8) +
-    coord_flip() +
-    theme_minimal() +
-    labs(title = "Balanços significatius (p < 0.05)",
-         x = "Balanç", y = expression(-log[10](p))) +
-    scale_fill_manual(values = c("#5DADE2", "#58D68D", "#F5B041"))
-} else {
-  cat("\nCap balanç significatiu (p < 0.05) trobat.\n")
+# ------------------------------------------------------------------
+# PAS 2: Assegurar que la matriu SBP existeix
+# ------------------------------------------------------------------
+# Aquest objecte 'SBP_hc' s'hauria d'haver creat en el teu script anterior
+if (!exists("SBP_hc")) {
+  stop("Error: L'objecte 'SBP_hc' no s'ha trobat. 
+       Assegura't d'haver executat el codi de clustering jeràrquic primer.")
 }
 
-# -----------------------------
-# 5) Resum estadístic per tipus de SBP
-# -----------------------------
-summary_SBP <- aggregate(p_value ~ SBP, data = all_results, 
-                         FUN = function(x) c(min = min(x), mean = mean(x)))
-summary_SBP <- do.call(data.frame, summary_SBP)
+# ------------------------------------------------------------------
+# PAS 3: Extreure els tàxons d'aquest balanç
+# ------------------------------------------------------------------
+# Extraiem la columna (el balanç) que ens interessa
+balanc_hc10_vector <- SBP_hc[, balance_interes_nom]
 
-cat("\n===== Estadístics resum per tipus de SBP =====\n")
-print(summary_SBP)
+# Mirem quins tàxons estan a cada grup
+taxa_grup_positiu <- names(balanc_hc10_vector[balanc_hc10_vector == 1])
+taxa_grup_negatiu <- names(balanc_hc10_vector[balanc_hc10_vector == -1])
+taxa_grup_zero <- names(balanc_hc10_vector[balanc_hc10_vector == 0])
 
-ggplot(summary_SBP, aes(x = SBP, y = p_value.min, fill = SBP)) +
-  geom_col(alpha = 0.8) +
-  theme_minimal() +
-  labs(title = "Comparació del p-value mínim per tipus de SBP",
-       x = "Tipus de SBP", y = "p-value mínim (menor = millor)") +
-  scale_fill_manual(values = c("#5DADE2", "#58D68D", "#F5B041"))
+# ------------------------------------------------------------------
+# PAS 4: Mostrar els resultats
+# ------------------------------------------------------------------
+cat("\n======================================================\n")
+cat("TRADUCCIÓ TÈCNICA DEL BALANÇ:", balance_interes_nom, "\n")
+cat("======================================================\n")
+cat("Aquest balanç (p-value =", 
+    round(results_hc_all[balance_interes_nom, "p_value"], 5), 
+    ")\nrepresenta el log-ràtio entre dos grups:\n\n")
 
-# -----------------------------
-# 6) Detalls del millor balanç
-# -----------------------------
-b_name <- best_balance$Balance
-balance_vec <- SBP_hc[, b_name]
+cat("--- GRUP +1 (Numerador) ---\n")
+if (length(taxa_grup_positiu) > 0) {
+  print(taxa_grup_positiu)
+} else {
+  cat("[Cap tàxon en aquest grup]\n")
+}
 
-taxa_positive <- names(balance_vec[balance_vec == 1])
-taxa_negative <- names(balance_vec[balance_vec == -1])
+cat("\n--- GRUP -1 (Denominador) ---\n")
+if (length(taxa_grup_negatiu) > 0) {
+  print(taxa_grup_negatiu)
+} else {
+  cat("[Cap tàxon en aquest grup]\n")
+}
 
-cat("\n========== Informació del balanç", b_name, "==========\n")
-cat("\nTàxons (+1):\n"); print(taxa_positive)
-cat("\nTàxons (−1):\n"); print(taxa_negative)
-cat("\nNombre de tàxons per grup:\n")
-cat("+1:", length(taxa_positive), " |  −1:", length(taxa_negative), "\n")
-
-# -----------------------------
-# 7) Boxplot del millor balanç
-# -----------------------------
-ggplot(microbiota_olr_hc_df, aes(x = obesity, y = .data[[b_name]], fill = obesity)) +
-  geom_boxplot(alpha = 0.7) +
-  labs(title = paste("Balanç", b_name, "— separació per obesitat"),
-       x = "Obesitat", y = "Coordenada OLR") +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-
+cat("\n--- Tàxons no inclosos en aquest balanç ---\n")
+if (length(taxa_grup_zero) > 0) {
+  print(taxa_grup_zero)
+} else {
+  cat("[Tots els tàxons estan inclosos en el balanç]\n")
+}
+cat("\n======================================================\n")
 

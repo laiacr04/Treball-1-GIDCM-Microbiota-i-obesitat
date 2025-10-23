@@ -252,9 +252,6 @@ results_hc_all$SBP <- "Jeràrquica"
 
 
 
-
-
-
 # ------------------------------------------------------------------
 # PAS 1: Definir el balanç d'interès
 # ------------------------------------------------------------------
@@ -313,4 +310,205 @@ if (length(taxa_grup_zero) > 0) {
   cat("[Tots els tàxons estan inclosos en el balanç]\n")
 }
 cat("\n======================================================\n")
+
+
+
+
+
+
+
+# ------------------------------------------------------------------
+# GRÀFIC 2: RÀNQUING DE BALANÇOS (La Tria)
+# ------------------------------------------------------------------
+results_hc_all$log10_p <- -log10(results_hc_all$p_value)
+results_hc_all$Significant <- ifelse(results_hc_all$p_value < 0.05, "Significatiu (p<0.05)", "No Significatiu")
+p_ranking <- ggplot(results_hc_all, aes(x = reorder(Balance, log10_p), y = log10_p, color = Significant)) +
+  geom_segment(aes(xend = reorder(Balance, log10_p), yend = 0), linewidth = 1) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
+  coord_flip() +
+  scale_color_manual(values = c("Significatiu (p<0.05)" = "#E63946", "No Significatiu" = "grey")) +
+  labs(title = "Gràfic 2: Significació dels Balanços Estructurals",
+       x = "Balanç (Ordenat per p-value)",
+       y = expression(-log[10](p-value))) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+print(p_ranking)
+
+# ------------------------------------------------------------------
+# GRÀFIC 3: GRÀFIC REPRESENTATIU (Scatter Plot)
+# ------------------------------------------------------------------
+gm_mean <- function(x) {
+  if (any(x <= 0)) return(NA)
+  exp(mean(log(x)))
+}
+gm_positiu <- apply(microbiota_prop_nz[, taxa_grup_positiu, drop = FALSE], 1, gm_mean)
+gm_negatiu <- apply(microbiota_prop_nz[, taxa_grup_negatiu, drop = FALSE], 1, gm_mean)
+df_plot_representatiu <- data.frame(
+  log_gm_positiu = log(gm_positiu),
+  log_gm_negatiu = log(gm_negatiu),
+  obesity = data$obesity
+)
+p_representatiu <- ggplot(df_plot_representatiu, 
+                          aes(x = log_gm_negatiu, y = log_gm_positiu, 
+                              color = obesity, shape = obesity)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  labs(title = paste("Gràfic 3: El Balanç", balance_interes_nom, "en Acció (Molt Representatiu)"),
+       subtitle = "Cada punt és un pacient. La línia discontínua significa 'equilibri' (Ràtio = 1).",
+       x = "Log( Mitjana Geomètrica Grup -1 [Eucariotes] )",
+       y = "Log( Mitjana Geomètrica Grup +1 [Bacteris] )") +
+  scale_color_manual(values = c("No obesitat" = "#457B9D", "Obesitat" = "#E63946")) +
+  scale_shape_manual(values = c("No obesitat" = 16, "Obesitat" = 17)) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+print(p_representatiu)
+
+# ------------------------------------------------------------------
+# GRÀFIC 4: BOXPLOT DE 'hc_b10' (La Troballa Clau)
+# ------------------------------------------------------------------
+p_boxplot_clau <- ggplot(microbiota_olr_hc_df, 
+                         aes(x = obesity, y = .data[[balance_interes_nom]], fill = obesity)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5, height = 0) +
+  labs(title = paste("Gràfic 4: Resum Estadístic (Balanç", balance_interes_nom, ")"),
+       subtitle = paste("p-value =", round(results_hc_all[balance_interes_nom, "p_value"], 5)),
+       x = "Estat d'Obesitat",
+       y = "Coordenada OLR (Log-ràtio Bacteris / Eucariotes)") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("No obesitat" = "#457B9D", "Obesitat" = "#E63946"))
+print(p_boxplot_clau)
+
+# ------------------------------------------------------------------
+# GRÀFIC 5: BOXPLOTS DE SUPORT (L'Evidència)
+# ------------------------------------------------------------------
+taxa_interes <- c(taxa_grup_positiu, taxa_grup_negatiu)
+data_suport <- cbind(microbiota_prop_nz[, taxa_interes, drop = FALSE], obesity = data$obesity)
+data_suport_long <- data_suport %>%
+  pivot_longer(cols = -obesity, names_to = "Taxon", values_to = "Abundancia") %>%
+  mutate(Grup_Balanç = ifelse(Taxon %in% taxa_grup_positiu, 
+                              "Grup +1 (Bacteris)", 
+                              "Grup -1 (Eucariotes)"))
+p_suport <- ggplot(data_suport_long, aes(x = obesity, y = Abundancia, fill = obesity)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.1, alpha = 0.3, height = 0) +
+  facet_wrap(~ Grup_Balanç + Taxon, scales = "free_y", ncol = 4) +
+  labs(title = "Gràfic 5: Evidència (Abundància Tàxons Individuals)",
+       x = "Estat d'Obesitat",
+       y = "Abundància Relativa (després de CZM)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("No obesitat" = "#457B9D", "Obesitat" = "#E63946"))
+print(p_suport)
+
+
+# ##################################################################
+# # --- NOUS GRÀFICS ADDICIONALS ---
+# ##################################################################
+
+# ------------------------------------------------------------------
+# GRÀFIC 6: BIPLOT PCA (Context Global)
+# ------------------------------------------------------------------
+# Necessitem executar el PCA sobre les dades CLR
+pca_clr <- prcomp(microbiota_clr_cols, center = TRUE, scale. = FALSE)
+
+# Scores (pacients)
+pca_scores <- as.data.frame(pca_clr$x)
+pca_scores$obesity <- data$obesity
+# Loadings (tàxons)
+pca_loadings <- as.data.frame(pca_clr$rotation)
+pca_loadings$taxon <- rownames(pca_loadings)
+
+# Projecció del nostre balanç hc_b10 al PCA
+# El vector del balanç (basis_hc) és una direcció a l'espai CLR
+balance_basis_vector <- basis_hc[, balance_interes_nom]
+# El transformem a l'espai PC
+pc_projection <- t(pca_clr$rotation) %*% balance_basis_vector
+balance_pc_coords <- data.frame(
+  PC1 = pc_projection[1], 
+  PC2 = pc_projection[2],
+  label = balance_interes_nom
+)
+
+# Calculem la variància explicada per al títol
+variance_explained <- summary(pca_clr)$importance[2, 1:2] * 100
+
+p_biplot <- ggplot() +
+  # Punts dels pacients
+  geom_point(data = pca_scores, aes(x = PC1, y = PC2, color = obesity), 
+             alpha = 0.7, size = 2) +
+  # Fletxes dels tàxons individuals (opcional, pot ser sorollós)
+  # geom_segment(data = pca_loadings, 
+  #              aes(x = 0, y = 0, xend = PC1*10, yend = PC2*10), 
+  #              arrow = arrow(length = unit(0.2, "cm")), color = "grey40") +
+  # geom_text(data = pca_loadings, aes(x = PC1*11, y = PC2*11, label = taxon), 
+  #           size = 2.5, color = "grey20") +
+  
+  # Fletxa GRUIXUDA del nostre balanç hc_b10
+  geom_segment(data = balance_pc_coords, 
+               aes(x = 0, y = 0, xend = PC1 * 15, yend = PC2 * 15), 
+               arrow = arrow(length = unit(0.4, "cm")), 
+               color = "black", linewidth = 1.5) +
+  geom_text(data = balance_pc_coords, 
+            aes(x = PC1 * 16, y = PC2 * 16, label = label), 
+            size = 5, color = "black", fontface = "bold") +
+  
+  labs(title = "Gràfic 6: Context Global (Biplot PCA)",
+       subtitle = "El balanç hc_b10 (fletxa negra) s'alinea amb la separació dels grups.",
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  scale_color_manual(values = c("No obesitat" = "#457B9D", "Obesitat" = "#E63946")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  coord_fixed(ratio = 1) # Assegura que les direccions són correctes
+
+print(p_biplot)
+
+
+# ------------------------------------------------------------------
+# GRÀFIC 7: HEATMAP (Visió Detallada)
+# ------------------------------------------------------------------
+# Preparem les dades per al heatmap
+data_heatmap <- as.data.frame(microbiota_clr_cols)
+data_heatmap$PatientID <- 1:nrow(data_heatmap)
+data_heatmap$obesity <- data$obesity
+data_heatmap$hc_b10_value <- microbiota_olr_hc_df[[balance_interes_nom]]
+
+# Ordenem els pacients (X) per obesitat i pel valor del balanç
+patient_order <- order(data_heatmap$obesity, data_heatmap$hc_b10_value)
+# Ordenem els tàxons (Y) segons el clúster
+taxon_order <- hc_taxa$order
+
+# Fonem (melt) les dades per a ggplot
+data_heatmap_long <- data_heatmap %>%
+  pivot_longer(cols = all_of(taxa_names), 
+               names_to = "Taxon", 
+               values_to = "CLR_Value")
+
+# Apliquem l'ordre als factors
+data_heatmap_long$Taxon <- factor(data_heatmap_long$Taxon, 
+                                  levels = taxa_names[taxon_order])
+data_heatmap_long$PatientID_ordered <- factor(data_heatmap_long$PatientID, 
+                                              levels = patient_order)
+
+# Creem el heatmap
+p_heatmap <- ggplot(data_heatmap_long, 
+                    aes(x = PatientID_ordered, y = Taxon, fill = CLR_Value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "#0077B6", mid = "white", high = "#D00000", 
+                       midpoint = 0, name = "Valor CLR") +
+  labs(title = "Gràfic 7: Heatmap d'Abundàncies CLR",
+       subtitle = "Pacients ordenats per 'obesitat' i balanç 'hc_b10'. Tàxons ordenats per clúster.",
+       x = "Pacients (Ordenats)",
+       y = "Tàxons (Ordenats per Clúster)") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(), # Amaguem els ID de pacient (massa soroll)
+    axis.ticks.x = element_blank(),
+    panel.grid = element_blank()
+  )
+
+print(p_heatmap)
 

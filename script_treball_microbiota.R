@@ -311,13 +311,7 @@ if (length(taxa_grup_negatiu) > 0) {
   cat("[Cap tàxon en aquest grup]\n")
 }
 
-cat("\n--- Tàxons no inclosos en aquest balanç ---\n")
-if (length(taxa_grup_zero) > 0) {
-  print(taxa_grup_zero)
-} else {
-  cat("[Tots els tàxons estan inclosos en el balanç]\n")
-}
-cat("\n======================================================\n")
+
 
 ##################################################################
 # GRÀFIC 3: BOXPLOT DEL BALANÇ CLAU 
@@ -366,27 +360,5 @@ p_representatiu <- ggplot(df_plot_representatiu,
   theme(legend.position = "bottom")
 print(p_representatiu)
 
-##################################################################
-# GRÀFIC 5  BOXPLOTS DE SUPORT 
-##################################################################
-taxa_interes <- c(taxa_grup_positiu, taxa_grup_negatiu)
-data_suport <- cbind(microbiota_prop_nz[, taxa_interes, drop = FALSE], obesity = data$obesity)
 
-data_suport_long <- data_suport %>%
-  pivot_longer(cols = -obesity, names_to = "Taxon", values_to = "Abundancia") %>%
-  mutate(Grup_Balanç = ifelse(Taxon %in% taxa_grup_positiu, 
-                              "Grup +1 (Numerador)", 
-                              "Grup -1 (Denominador)"))
 
-p_suport <- ggplot(data_suport_long, aes(x = obesity, y = Abundancia, fill = obesity)) +
-  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
-  geom_jitter(width = 0.1, alpha = 0.3, height = 0) +
-  facet_wrap(~ Grup_Balanç + Taxon, scales = "free_y", ncol = 4) +
-  labs(title = "GRÀFIC 6 : Evidència (Abundància Tàxons Individuals)",
-       x = "Estat d'Obesitat",
-       y = "Abundància Relativa ") +
-  theme_minimal() +
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust = 1)) +
-  scale_fill_manual(values = c("No obesitat" = "#457B9D", "Obesitat" = "#E63946"))
-print(p_suport)
